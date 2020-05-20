@@ -1,54 +1,7 @@
-import sys
-import logging
-from unicorn import *
-from androidemu.emulator import Emulator
-from UnicornTraceDebugger import udbg
-from androidemu.java.helpers.native_method import native_method
-from androidemu.utils import memory_helpers
+from capstone import *
 
-logging.basicConfig(stream=sys.stdout,
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)7s %(name)34s | %(message)s")
-logger = logging.getLogger(__name__)
+ARM_CODE = b'\xD9\x98\x00\00'
 
-@native_method
-def __aeabi_memclr(mu, addr, size):
-    print('__aeabi_memclr(%x,%d)' % (addr, size))
-    mu.mem_write(addr, bytes(size))
-
-@native_method
-def __aeabi_memcpy(mu, dist, source, size):
-    data = mu.mem_read(source, size)
-    mu.mem_write(dist, bytes(data))
-    print('__aeabi_memcpy(%x,%x,%d)' % (dist, source, size))
-
-@native_method
-def sprintf(mu, buffer, fmt, a1, a2):
-    fmt1 = memory_helpers.read_utf8(mu, fmt)
-    data1 = memory_helpers.read_utf8(mu, a1)
-    result = fmt1 % (data1, a2)
-    mu.mem_write(buffer, bytes((result + '\x00').encode('utf-8')))
-    # print('sprintf(%s)' % (result))
-
-emulator = Emulator()
-
-#got hook
-emulator.modules.add_symbol_hook('__aeabi_memclr', emulator.hooker.write_function(__aeabi_memclr) + 1)
-emulator.modules.add_symbol_hook('__aeabi_memcpy', emulator.hooker.write_function(__aeabi_memcpy) + 1)
-emulator.modules.add_symbol_hook('sprintf', emulator.hooker.write_function(sprintf) + 1)
-
-
-
-try:
-    dbg = udbg.UnicornDebugger(emulator.mu)
-    libc = emulator.load_library('jnilibs/libc.so', do_init=False)
-    libmod = emulator.load_library('jnilibs/libDexHelper.so', do_init=True)
-    #
-    # s = emulator.call_symbol(libmod, 'Java_com_sec_udemo_MainActivity_sign_1lv2',
-    #                      emulator.java_vm.jni_env.address_ptr, 0, "123")
-    print(s)
-except UcError as e:
-    list_tracks = dbg.get_tracks()
-    for addr in list_tracks[-100:-1]:
-        print(hex(addr - 0xcbc66000))
-    print (e)
+md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
+for i in md.disasm(ARM_CODE, 0x1000):
+    print("0x%x:\t%s\t%s" % (i.address, i.mnemonic, i.op_str))
