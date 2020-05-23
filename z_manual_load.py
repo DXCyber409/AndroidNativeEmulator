@@ -26,7 +26,7 @@ mu.mem_write(image_base, binary) ### 非常简陋的加载方法
 # stack
 stack_base = 0xa0000
 stack_size = 0x10000 * 3
-stack_top = stack_base + stack_size - 0x4
+stack_top = stack_base - stack_size
 mu.mem_map(stack_base, stack_size)
 mu.reg_write(UC_ARM_REG_SP, stack_top)
 

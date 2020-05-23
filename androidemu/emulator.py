@@ -140,6 +140,9 @@ class Emulator:
 
         return self.call_native(symbol.address, *argv)
 
+    def call_symbol_by_native(self, module, symbol_addr, *argv):
+        return self.call_native(symbol_addr, *argv)
+
     def call_native(self, addr, *argv):
         # Detect JNI call
         is_jni = False

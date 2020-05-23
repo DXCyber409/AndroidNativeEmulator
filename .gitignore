@@ -5,3 +5,5 @@
 *.id2
 *.nam
 *.til
+
+*.pyc
