@@ -119,8 +119,10 @@ class Modules:
         return None, None
 
 
-    def load_module(self, filename):
+    def load_module(self, filename, dump_base=0x0):
         logger.debug("Loading module '%s'." % filename)
+        if (dump_base > 0):
+            logger.debug("Fix dump base '%s'." % hex(dump_base))
 
         with open(filename, 'rb') as fstream:
             elf = MyElffile(fstream)
@@ -154,6 +156,10 @@ class Modules:
 
             # Retrieve a base address for this module.
             load_base = self.emu.memory.mem_reserve(bound_high - bound_low)
+            # When a module is dumped from memory, the relocation or got data has been rewrite to fix base address.
+            # A simple way to not fix so many relocation is to reuse the dumped base address.
+            if (dump_base > 0):
+                load_base = dump_base
 
             for segment in load_segments:
                 #prot = get_segment_protection(segment.header.p_flags)
@@ -210,7 +216,9 @@ class Modules:
                 data = fstream.read(4)
                 fun_ptr = struct.unpack('I', data)[0]
                 if fun_ptr != 0:
-                    # fun_ptr += load_base
+                    # Fix dump base
+                    if (dump_base > 0):
+                        fun_ptr = fun_ptr - dump_base
                     init_array.append(fun_ptr + load_base)
                     print ("find init array for :%s %x" % (filename, fun_ptr))
                 else:
@@ -281,7 +289,7 @@ class Modules:
                             value_orig = int.from_bytes(value_orig_bytes, byteorder='little')
 
                             # Create the new value
-                            value = load_base + value_orig
+                            value = load_base + value_orig - dump_base
 
                             # Write the new value
                             self.emu.mu.mem_write(rel_addr, value.to_bytes(4, byteorder='little'))

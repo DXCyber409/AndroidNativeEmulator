@@ -47,4 +47,5 @@ class SyscallHandlers:
             error = "Unhandled syscall 0x%x (%u) at 0x%x, stopping emulation" % (idx, idx,
                                                                                       mu.reg_read(UC_ARM_REG_PC))
             mu.emu_stop()
+            mu.emu.dbg.print_stacktrace(1000)
             raise RuntimeError(error)

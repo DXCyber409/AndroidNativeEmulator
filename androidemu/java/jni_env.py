@@ -667,6 +667,13 @@ class JNIEnv:
             # TODO: Proper Java error?
             raise RuntimeError("Could not find method %d in object %s by id." % (method_id, obj.value.jvm_name))
 
+        if (method.isabstract):
+            prototype_method = method
+            method = obj.value.__class__.find_method(method.name, method.signature)
+            if method is None:
+                raise RuntimeError("Could not find method '%s' with signature '%s' in object '%s' "
+                                   % (prototype_method.name, prototype_method.signature, obj.value.jvm_name))
+
         logger.debug("JNIEnv->CallObjectMethodV(%s, %s <%s>, 0x%x) was called" % (
             obj.value.jvm_name,
             method.name,

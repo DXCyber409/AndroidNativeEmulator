@@ -98,4 +98,5 @@ class Hooker:
         except:
             # Make sure we catch exceptions inside hooks and stop emulation.
             mu.emu_stop()
+            self._emu.print_stacktrace()
             raise

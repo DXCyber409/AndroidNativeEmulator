@@ -4,9 +4,10 @@ import time
 from random import randint
 
 import hexdump
-from unicorn import Uc, UC_ARCH_ARM, UC_MODE_ARM
-from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_R0
+from unicorn import Uc, UC_ARCH_ARM, UC_MODE_ARM, UC_HOOK_CODE
+from unicorn.arm_const import *
 
+from UnicornTraceDebugger import udbg
 from androidemu import config
 from androidemu.config import HOOK_MEMORY_BASE, HOOK_MEMORY_SIZE
 from androidemu.cpu.interrupt_handler import InterruptHandler
@@ -35,6 +36,10 @@ class Emulator:
     def __init__(self, vfs_root=None, vfp_inst_set=False):
         # Unicorn.
         self.mu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
+
+        # Intergrated Debugger.
+        self.dbg = udbg.UnicornDebugger(self.mu)
+        self.mu.emu = self
 
         if vfp_inst_set:
             self._enable_vfp()
@@ -82,7 +87,7 @@ class Emulator:
         self.native_hooks = NativeHooks(self, self.native_memory, self.modules, self.hooker)
 
         # Tracer
-        self.tracer = Tracer(self.mu, self.modules)
+        # self.tracer = Tracer(self.mu, self.modules)
 
     # https://github.com/unicorn-engine/unicorn/blob/8c6cbe3f3cabed57b23b721c29f937dd5baafc90/tests/regress/arm_fp_vfp_disabled.py#L15
     def _enable_vfp(self):
@@ -119,8 +124,8 @@ class Emulator:
     def _call_init_array(self):
         pass
 
-    def load_library(self, filename, do_init=True):
-        libmod = self.modules.load_module(filename)
+    def load_library(self, filename, do_init=True, dump_base=0x0):
+        libmod = self.modules.load_module(filename, dump_base)
         if do_init:
             logger.debug("Calling Init for: %s " % filename)
             for fun_ptr in libmod.init_array:
@@ -139,9 +144,6 @@ class Emulator:
             return
 
         return self.call_native(symbol.address, *argv)
-
-    def call_symbol_by_native(self, module, symbol_addr, *argv):
-        return self.call_native(symbol_addr, *argv)
 
     def call_native(self, addr, *argv):
         # Detect JNI call
@@ -169,6 +171,27 @@ class Emulator:
                     return result
 
                 return result.value
+        except:
+            self.dbg.print_stacktrace(1000)
+            raise
+        finally:
+            # Clear locals if jni.
+            if is_jni:
+                self.java_vm.jni_env.clear_locals()
+
+    def call_native_to_addrend(self, addr_start, addr_end, *argv):
+        # Detect JNI call
+        is_jni = False
+
+        if len(argv) >= 1:
+            is_jni = argv[0] == self.java_vm.address_ptr or argv[0] == self.java_vm.jni_env.address_ptr
+
+        try:
+            # Execute native call.
+            native_write_args(self, *argv)
+            stop_pos = randint(HOOK_MEMORY_BASE, HOOK_MEMORY_BASE + HOOK_MEMORY_SIZE) | 1
+            self.mu.reg_write(UC_ARM_REG_LR, stop_pos)
+            self.mu.emu_start(addr_start, addr_end - 1)
         finally:
             # Clear locals if jni.
             if is_jni:
@@ -192,4 +215,3 @@ class Emulator:
                     data = self.mu.mem_read(mod.base, mod.size)
                     f.write(data)
                 return
-

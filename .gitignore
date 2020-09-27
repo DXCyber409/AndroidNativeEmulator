@@ -7,3 +7,6 @@
 *.til
 
 *.pyc
+
+*/__pycache__
+BIDVEmulator.py

@@ -10,7 +10,7 @@ class JavaClassDef(type):
     next_jvm_method_id = itertools.count(start=0xd2000000, step=4)
     next_jvm_field_id = itertools.count(start=0xe2000000, step=4)
 
-    def __init__(cls, name, base, ns, jvm_name=None, jvm_fields=None, jvm_ignore=False, jvm_super=None):
+    def __init__(cls, name, base, ns, jvm_name=None, jvm_fields=None, jvm_ignore=False, jvm_super=None, isinterface=False):
         cls.jvm_id = next(JavaClassDef.next_jvm_id)
         cls.jvm_name = jvm_name
         cls.jvm_methods = dict()
@@ -19,6 +19,7 @@ class JavaClassDef(type):
         cls.jvm_super = jvm_super
         if cls.jvm_super == None and jvm_name != 'java.lang.Object':
             cls.jvm_super = java_lang_Object
+        cls.isinterface = isinterface
 
         # Register all defined Java methods.
         for func in inspect.getmembers(cls, predicate=inspect.isfunction):
@@ -62,7 +63,9 @@ class JavaClassDef(type):
         try:
             if cls.jvm_super is not None:
                 find = cls.jvm_super.find_method(name, signature)
-                if find is not None:
+                # when method.isabstract is True means there has a polymorphic implementation.
+                # not return by superclass but continue find in subclass.
+                if find is not None and find.isabstract is False:
                     return find
         except KeyError:
             pass
@@ -73,14 +76,18 @@ class JavaClassDef(type):
         return None
 
     def find_method_by_id(cls, jvm_id):
+        """
+        Find by id is fixed mode, so there is no more adjustment about polymorphic implementation.
+        See @find_method.
+        """
+        if cls.jvm_super is not None:
+            find = cls.jvm_super.find_method_by_id(jvm_id)
+            if (find is not None):
+                return find
         try:
-            if cls.jvm_super is not None:
-                find = cls.jvm_super.find_method_by_id(jvm_id)
-                if find is not None:
-                    return find
+            return cls.jvm_methods[jvm_id]
         except KeyError:
-            pass
-        return cls.jvm_methods[jvm_id]
+            return None
 
     def find_field(cls, name, signature, is_static):
 

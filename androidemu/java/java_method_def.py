@@ -1,6 +1,6 @@
 class JavaMethodDef:
 
-    def __init__(self, func_name, func, name, signature, native, args_list=None, modifier=None, ignore=None):
+    def __init__(self, func_name, func, name, signature, native, args_list=None, modifier=None, ignore=None, isabstract=False):
         self.jvm_id = None  # Assigned by JavaClassDef.
         self.func_name = func_name
         self.func = func
@@ -12,8 +12,15 @@ class JavaMethodDef:
         self.modifier = modifier
         self.ignore = ignore
 
+        # When call enc->CallObjectMethodV or other similar functions, polymorphism will occur.
+        # The Native part will callback Super abstract method to call, which means a function that doesn't to be implement will be called.
+        # My solution is marking the super class as interface, and to process after specific implementation.
+        # See androidemu.java.jni_env.JNIEnv.call_object_method_v
+        self.isabstract = isabstract
 
-def java_method_def(name, signature, native=False, args_list=None, modifier=None, ignore=False):
+# end JavaMethodDef
+
+def java_method_def(name, signature, native=False, args_list=None, modifier=None, ignore=False, isabstract=False):
     def java_method_def_real(func):
         def native_wrapper(self, emulator, *argv):
             return emulator.call_native(
@@ -32,7 +39,8 @@ def java_method_def(name, signature, native=False, args_list=None, modifier=None
         wrapper.jvm_method = JavaMethodDef(func.__name__, wrapper, name, signature, native,
                                            args_list=args_list,
                                            modifier=modifier,
-                                           ignore=ignore)
+                                           ignore=ignore,
+                                           isabstract=isabstract)
         return wrapper
 
     return java_method_def_real

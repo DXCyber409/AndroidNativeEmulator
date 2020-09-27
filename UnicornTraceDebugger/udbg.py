@@ -97,17 +97,26 @@ def _dbg_memory(mu, access, address, length, value, self):
     mu.emu_stop()
     return True
 
-def _dbg_trace_internal(mu, address, size, self):
+def dbg_show_workspace(address=None, size=None, self=None):
+    if (address is not None):
+        dbg_show_workspace.address = address
+    if (size is not None):
+        dbg_show_workspace.size = size
+    if (self is not None):
+        dbg_show_workspace.self = self
 
-    self._is_step = False
-    print ("======================= Registers =======================")
-    self.dump_reg()
-    print ("======================= Disassembly =====================")
-    if size == 4:
+    dbg_show_workspace.self._is_step = False
+    print("======================= Registers =======================")
+    dbg_show_workspace.self.dump_reg()
+    print("======================= Disassembly =====================")
+    if dbg_show_workspace.size == 4:
         mode = 'arm'
     else:
         mode = 'thumb'
-    self.dump_asm(address, size * self.dis_count, mode)
+    dbg_show_workspace.self.dump_asm(dbg_show_workspace.address, dbg_show_workspace.size * dbg_show_workspace.self.dis_count, mode)
+
+def _dbg_trace_internal(mu, address, size, self):
+    dbg_show_workspace(address, size, self)
 
     while True:
         raw_command = input(">")
@@ -163,18 +172,31 @@ def _dbg_trace_internal(mu, address, size, self):
                 self._castone = self._capstone_arm
                 print ("======================= Disassembly =====================")
                 self.dump_asm(address, size * self.dis_count)
-            elif command[0] == 'f':
-                print (" == recent ==")
-                for i in self._tracks[-10:-1]:
-                    print (self.sym_handler(i))
+            elif command[0] == 'f' or command[0] == 'flow':
+                if (command[1] == 'show'):
+                    if len(command) >= 3:
+                        fsize = str2int(command[2])
+                        self.print_stacktrace(fsize)
+                    else:
+                        self.print_stacktrace()
+                elif (command[1] == 'save'):
+                    if len(command) >= 3:
+                        path = command[2]
+                        self.save_stacktrace(path)
+                    else:
+                        self.save_stacktrace()
+            elif command[0] == 'workspace' or command[0] == 'w':
+                dbg_show_workspace()
+            elif command[0] == 'help' or command[0] == 'h':
+                UnicornDebugger.show_help()
             else:
                 print ("Command Not Found!")
 
         except:
             print("[Debugger Error]command error see help.")
 
-
 class UnicornDebugger:
+    base_addr = 0x9cfd6000
     def __init__(self, mu, mode = UDBG_MODE_ALL):
         self._tracks = []
         self._mu = mu
@@ -241,12 +263,13 @@ class UnicornDebugger:
         else:
             md = cp.Cs(cp.CS_ARCH_ARM, cp.CS_MODE_THUMB)
 
+        flag = False
         code = self._mu.mem_read(addr, size)
-        count = 0
         for ins in md.disasm(code, addr):
-            if count >= self.dis_count:
-                break
-            print("%s:\t%s\t%s" % (self.sym_handler(ins.address), ins.mnemonic, ins.op_str))
+            flag = True
+            print("%s/%s:\t%s\t%s" % (self.sym_handler(ins.address), self.sym_handler(ins.address - UnicornDebugger.base_addr), ins.mnemonic, ins.op_str))
+        if not flag:
+            print("Disassembly failed in 0x%x/0x%x" % (addr, addr - self.base_addr))
 
     def dump_reg(self):
         result_format = ''
@@ -255,12 +278,15 @@ class UnicornDebugger:
             rname = self._regs[rid]
             value = self._mu.reg_read(rid)
             if count < 4:
-                result_format = result_format  + rname + '=' + hex(value) + '\t\t\t'
+                result_format = result_format  + rname + '=' + hex(value) + '  '
                 count += 1
             else:
-                count = 0
-                result_format += '\n' + rname + '=' + hex(value)
+                count = 1
+                result_format += '\n' + rname + '=' + hex(value) + '  '
         print (result_format)
+        RawAddr = "RawAddr:%s" % hex(self._mu.reg_read(arm_const.UC_ARM_REG_PC) - UnicornDebugger.base_addr)
+        BaseAddr = "BaseAddr:%s" % hex(self.base_addr)
+        print (RawAddr + "  " + BaseAddr)
 
     def write_reg(self, reg_name, value):
         for rid in self._regs:
@@ -271,21 +297,24 @@ class UnicornDebugger:
         print ("[Debugger Error] Reg not found:%s " % reg_name)
 
 
-
-    def show_help(self):
-        help_info = """
+    @staticmethod
+    def show_help():
+        help_info = \
+        """
         # commands
         # set reg <regname> <value>
         # set bpt <addr>
         # n[ext]
         # s[etp]
         # r[un]
+        # w[orkspace] show current workspace
         # dump <addr> <size>
         # list bpt
         # del bpt <addr>
         # stop
         # a/t change arm/thumb
-        # f show ins flow
+        # f[low] show size (show ins flow)
+        # f[low] save path (save ins flow, default path 'trace.log')
         """
         print (help_info)
 
@@ -300,15 +329,23 @@ class UnicornDebugger:
         self._list_bpt.remove(addr)
 
     def get_tracks(self):
-        for i in self._tracks[-100:-1]:
-            #print (self.sym_handler(i))
-            pass
         return self._tracks
+
+    def print_stacktrace(self, size=100):
+        print(" == recent ==")
+        list_tracks = self.get_tracks()
+        for addr in list_tracks[-size:-1]:
+            print("%s/%s" % (hex(addr), hex(addr - self.base_addr)))
+
+    def save_stacktrace(self, path="trace.log"):
+        list_tracks = self.get_tracks()
+        with open(path, mode="w", encoding='utf-8', buffering=4096) as f:
+            for addr in list_tracks:
+                f.write("%s/%s" % (hex(addr), hex(addr - self.base_addr)) + "\n")
+        print(path, "saved.")
 
     def _default_sym_handler(self, address):
         return hex(address)
 
     def set_symbol_name_handler(self, handler):
         self.sym_handler = handler
-
-
